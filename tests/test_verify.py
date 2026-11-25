@@ -78,3 +78,48 @@ def test_module_exit_code(ex):
     import sys
     r = subprocess.run([sys.executable, "-m", "xlsx_verify", str(ex / "bad_cycle.xlsx"), "--checks", "cycle"], capture_output=True)
     assert r.returncode == 1
+
+
+def _logical(tmp_path, formulas):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for i, f in enumerate(formulas, 1):
+        ws.cell(i, 1, f)
+    wb.save(tmp_path / "t.xlsx")
+    return cli.run(str(tmp_path / "t.xlsx"), ["logical"])
+
+
+@pytest.mark.parametrize("formula", [
+    "=ISERROR(A2)>0",
+    "=0<ISERROR(A2)",
+    "=IF(0<ISERROR(A2),1,2)",
+    "=ISNUMBER(A2) = 1",
+    "=ISERROR(IF(A2,(B2+(C2*(D2+1))),1))>0",
+    "=AND(A2>1,B2<3)=1",
+    "=ISERROR(A2)>-1",
+    "=(ISERROR(A2))>0",
+    "=IF((ISNUMBER(A2))=1,1,2)",
+    "=0<(ISERROR(A2))",
+])
+def test_logical_tokenizer_flags(tmp_path, formula):
+    f = _logical(tmp_path, [formula])
+    assert len(f) == 1 and f[0].severity == "error", formula
+
+
+@pytest.mark.parametrize("formula", [
+    '="ISERROR(x)>0"',
+    "=--ISERROR(A2)>0",
+    "=N(ISERROR(A2))>0",
+    "=ISERROR(A2)*1>0",
+    "=1+ISERROR(A2)>0",
+    "=0<ISERROR(A2)+1",
+    "=ISERROR(A2)=B2",
+    "=ISNUMBER(A2)=TRUE",
+    "=ISERROR(A2)",
+    "=IF(ISERROR(A2),0,1)>0",
+    "=A2>0",
+    "=(--ISERROR(A2))>0",
+])
+def test_logical_tokenizer_no_false_alarm(tmp_path, formula):
+    assert _logical(tmp_path, [formula]) == [], formula

@@ -9,9 +9,16 @@ import re
 import zipfile
 from html import unescape
 
+from openpyxl.formula import Tokenizer
+
 from .findings import Finding
 
-PAT = re.compile(r"\b(ISERROR|ISERR|ISNA|ISNUMBER|ISTEXT|ISBLANK|ISLOGICAL|ISNONTEXT|ISREF|ISEVEN|ISODD|ISFORMULA|AND|OR|NOT|EXACT)\(((?:[^()]|\((?:[^()]|\([^()]*\))*\))*)\)\s*(?:>=?|<=?|<>|=)\s*-?[0-9]")
+LOGICAL_FUNCS = frozenset((
+    "ISERROR", "ISERR", "ISNA", "ISNUMBER", "ISTEXT", "ISBLANK", "ISLOGICAL", "ISNONTEXT",
+    "ISREF", "ISEVEN", "ISODD", "ISFORMULA", "AND", "OR", "NOT", "EXACT",
+))
+COMPARE = frozenset(("=", "<>", "<", ">", "<=", ">="))
+ARITH = frozenset(("+", "-", "*", "/", "^", "&"))
 ARRAY = re.compile(r"SUMPRODUCT\((?:--)?(?:IFERROR|IF)\(")
 RANGE = re.compile(r"\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?\d+")
 CELL = re.compile(r'<c r="([A-Z]+[0-9]+)"[^>]*>\s*<f([^>]*)>([^<]*)</f>')
@@ -28,6 +35,57 @@ def needs_array(f):
     return False
 
 
+def _is_op(tok, values):
+    return tok.type == "OPERATOR-INFIX" and tok.value in values
+
+
+def _is_number(tok):
+    return tok.type == "OPERAND" and tok.subtype == "NUMBER"
+
+
+def bool_number_compares(formula):
+    """Spans like ``ISERROR(x)>0`` or ``0<ISERROR(x)`` from a token stream.
+
+    Only a numeric literal on the other side counts: comparing with a cell or TRUE/FALSE
+    cannot be judged statically. Coerced uses (``--F()``, ``N(F())``, ``F()*1``) are skipped.
+    """
+    toks = [t for t in Tokenizer(formula).items if t.type != "WHITE-SPACE"]
+    stack, spans = [], []
+    for i, t in enumerate(toks):
+        if t.type == "FUNC" and t.subtype == "OPEN":
+            stack.append(i)
+        elif t.type == "FUNC" and t.subtype == "CLOSE" and stack:
+            start = stack.pop()
+            name = toks[start].value[:-1].upper().removeprefix("_XLFN.")
+            if name in LOGICAL_FUNCS:
+                spans.append((start, i))
+    out = []
+    for start, end in spans:
+        # gereksiz parantezleri aş: =(ISERROR(A2))>0
+        while (start and end + 1 < len(toks) and toks[start - 1].type == "PAREN" and toks[start - 1].subtype == "OPEN"
+               and toks[end + 1].type == "PAREN" and toks[end + 1].subtype == "CLOSE"):
+            start, end = start - 1, end + 1
+        prev = toks[start - 1] if start else None
+        nxt = toks[end + 1] if end + 1 < len(toks) else None
+        if prev is not None and (prev.type == "OPERATOR-PREFIX" or _is_op(prev, ARITH)):
+            continue
+        if nxt is not None and (_is_op(nxt, ARITH) or nxt.type == "OPERATOR-POSTFIX"):
+            continue
+        lo = hi = None
+        if nxt is not None and _is_op(nxt, COMPARE):
+            k = end + 2
+            while k < len(toks) and toks[k].type == "OPERATOR-PREFIX":
+                k += 1
+            if k < len(toks) and _is_number(toks[k]):
+                lo, hi = start, k
+        if lo is None and prev is not None and _is_op(prev, COMPARE) and start >= 2 and _is_number(toks[start - 2]):
+            lo, hi = start - 2, end
+        if lo is not None:
+            spans_text = "".join(x.value for x in toks[lo:hi + 1])
+            out.append(spans_text)
+    return out
+
+
 def check(path):
     out = []
     with zipfile.ZipFile(path) as z:
@@ -38,16 +96,18 @@ def check(path):
             xml = z.read(n).decode("utf8", "ignore")
             for ref, attr, f in CELL.findall(xml):
                 f = unescape(f)
-                for m in PAT.finditer(f):
-                    before = f[max(0, m.start() - 2):m.start()]
-                    if before.endswith("--") or before.endswith("N("):
-                        continue
+                try:
+                    hits = bool_number_compares("=" + f.lstrip("="))
+                except Exception:  # noqa: BLE001  # tek bozuk formül tüm taramayı düşürmesin
+                    out.append(Finding("logical", "warning", f"{sheet}!{ref}", "formula could not be tokenized: " + f[:60]))
+                    hits = []
+                for span in hits:
                     out.append(Finding("logical", "error", f"{sheet}!{ref}",
-                                       "logical value compared with a number: " + m.group(0)[:80]))
+                                       "logical value compared with a number: " + span[:80]))
                 if 't="array"' not in attr and needs_array(f):
                     out.append(Finding("logical", "error", f"{sheet}!{ref}",
                                        "SUMPRODUCT(IFERROR/IF(range)) is not an array formula (implicit intersection in Excel)"))
-            for m in re.finditer(r'<conditionalFormatting sqref="([^"]+)"[^>]*>(.*?)</conditionalFormatting>', xml, re.S):
+            for m in re.finditer(r'<conditionalFormatting sqref="([^"]+)"[^>]*>(.*?)</conditionalFormatting>', xml, re.DOTALL):
                 sq = m.group(1)
                 if " " not in sq:
                     continue
