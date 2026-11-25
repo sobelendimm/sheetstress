@@ -6,13 +6,15 @@ fragile input cells that turn a pasted text, an extreme number or an empty strin
 
 ```
 pip install .
-sheetstress model.xlsx [--checks logical,cycle,error,text,edge,blankstr] [--json] [--max-samples N]
+sheetstress model.xlsx [--checks logical,cycle,error,text,edge,blankstr] [--json] [--max-samples N] [--fail-on-skipped]
 ```
 
-Exit codes: `0` pass, `1` at least one error finding, `2` usage / unreadable file.
+Exit codes: `0` pass, `1` at least one error finding, `2` usage / unreadable file,
+`4` a check was skipped and `--fail-on-skipped` was given (errors still win: `1`).
 Last line is `sheetstress: PASS`, `sheetstress: PASS (with skipped checks)` or `sheetstress: FAIL (n error(s))`.
 `PASS (with skipped checks)` (still exit `0`; JSON `"skipped_checks": true`) means a requested check could not
-run (no LibreOffice, or no unlocked input cells for `text`/`edge`/`blankstr`); each is listed as a `SKIPPED:` finding,
+run (no LibreOffice, no unlocked input cells for `text`/`edge`/`blankstr`, test values that could not be injected, or
+LibreOffice returning no output for an injected copy); each is listed as a `SKIPPED:` finding,
 so a plain `PASS` always means every requested check actually ran.
 
 | Check | Needs LibreOffice | What it catches |

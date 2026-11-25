@@ -39,6 +39,8 @@ def main(argv=None):
     ap.add_argument("--checks", default=",".join(ALL), help="comma list of: " + ",".join(ALL) + " (default: all)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--max-samples", type=int, default=30, help="max input cells to inject into (default 30)")
+    ap.add_argument("--fail-on-skipped", action="store_true",
+                    help="exit 4 when a requested check was skipped (and nothing failed), instead of PASS with skipped checks")
     ap.add_argument("--version", action="version", version="sheetstress " + __version__)
     a = ap.parse_args(argv)
     checks = list(dict.fromkeys(c.strip() for c in a.checks.split(",") if c.strip()))
@@ -59,14 +61,20 @@ def main(argv=None):
         return 2
     errors = [f for f in findings if f.severity == "error"]
     skipped = any(f.severity == "skipped" for f in findings)
+    strict = skipped and a.fail_on_skipped and not errors
     if a.json:
-        print(json.dumps({"file": a.file, "checks": checks, "pass": not errors, "skipped_checks": skipped,
+        print(json.dumps({"file": a.file, "checks": checks, "pass": not errors and not strict, "skipped_checks": skipped,
                           "findings": [f.as_dict() for f in findings]}, ensure_ascii=False, indent=2))
     else:
         for f in findings:
             print(f"{f.severity.upper():7} [{f.check}] {f.location}: {f.message}")
-        print(("sheetstress: PASS (with skipped checks)" if skipped else "sheetstress: PASS") if not errors else f"sheetstress: FAIL ({len(errors)} error(s))")
-    return 1 if errors else 0
+        if errors:
+            print(f"sheetstress: FAIL ({len(errors)} error(s))")
+        elif strict:
+            print("sheetstress: FAIL (skipped checks; --fail-on-skipped)")
+        else:
+            print("sheetstress: PASS (with skipped checks)" if skipped else "sheetstress: PASS")
+    return 1 if errors else 4 if strict else 0
 
 
 if __name__ == "__main__":
