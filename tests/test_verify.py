@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from xlsx_verify import cli, lo
+from sheetstress import cli, lo
 
 needs_lo = pytest.mark.skipif(lo.find_soffice() is None, reason="LibreOffice not installed")
 pytestmark = []
@@ -76,7 +76,7 @@ def test_sheet_name_case_insensitive_cycle(tmp_path):
 def test_module_exit_code(ex):
     import subprocess
     import sys
-    r = subprocess.run([sys.executable, "-m", "xlsx_verify", str(ex / "bad_cycle.xlsx"), "--checks", "cycle"], capture_output=True)
+    r = subprocess.run([sys.executable, "-m", "sheetstress", str(ex / "bad_cycle.xlsx"), "--checks", "cycle"], capture_output=True)
     assert r.returncode == 1
 
 

@@ -117,7 +117,7 @@ def inject(src, dst, sheet_xml, ref, value, kind):
 def run(path, modes, soffice, max_samples=30, timeout=600):
     """modes: subset of {'error','text','edge','blankstr'}. Returns findings."""
     out = []
-    work0 = Path(tempfile.mkdtemp(prefix="xlsx-verify-in-"))
+    work0 = Path(tempfile.mkdtemp(prefix="sheetstress-in-"))
     try:
         base_copy = work0 / "base.xlsx"
         shutil.copy(path, base_copy)

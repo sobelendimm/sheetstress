@@ -1,4 +1,4 @@
-"""xlsx-verify command line."""
+"""sheetstress command line."""
 import argparse
 import json
 import os
@@ -22,7 +22,7 @@ def run(path, checks, max_samples=30):
         soffice = lo.find_soffice()
         if not soffice:
             findings.append(Finding("libreoffice", "info", "-", "LibreOffice not found; skipped: " + ",".join(lo_modes)
-                                    + " (set XLSX_VERIFY_SOFFICE to its path)"))
+                                    + " (set SHEETSTRESS_SOFFICE to its path)"))
         else:
             findings += recalc_checks.run(path, lo_modes, soffice, max_samples)
     return findings
@@ -34,12 +34,12 @@ def main(argv=None):
             s.reconfigure(encoding="utf-8")
         except (AttributeError, ValueError):
             pass
-    ap = argparse.ArgumentParser(prog="xlsx-verify", description="Check an .xlsx template for bugs that only show up in real use.")
+    ap = argparse.ArgumentParser(prog="sheetstress", description="Check an .xlsx template for bugs that only show up in real use.")
     ap.add_argument("file", help=".xlsx file")
     ap.add_argument("--checks", default=",".join(ALL), help="comma list of: " + ",".join(ALL) + " (default: all)")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--max-samples", type=int, default=30, help="max input cells to inject into (default 30)")
-    ap.add_argument("--version", action="version", version="xlsx-verify " + __version__)
+    ap.add_argument("--version", action="version", version="sheetstress " + __version__)
     a = ap.parse_args(argv)
     checks = list(dict.fromkeys(c.strip() for c in a.checks.split(",") if c.strip()))
     bad = [c for c in checks if c not in ALL]
@@ -64,7 +64,7 @@ def main(argv=None):
     else:
         for f in findings:
             print(f"{f.severity.upper():7} [{f.check}] {f.location}: {f.message}")
-        print("xlsx-verify: PASS" if not errors else f"xlsx-verify: FAIL ({len(errors)} error(s))")
+        print("sheetstress: PASS" if not errors else f"sheetstress: FAIL ({len(errors)} error(s))")
     return 1 if errors else 0
 
 

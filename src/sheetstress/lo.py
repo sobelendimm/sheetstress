@@ -20,8 +20,8 @@ SETTINGS = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def find_soffice():
-    """Path to soffice or None. Honors XLSX_VERIFY_SOFFICE."""
-    env = os.environ.get("XLSX_VERIFY_SOFFICE")
+    """Path to soffice or None. Honors SHEETSTRESS_SOFFICE."""
+    env = os.environ.get("SHEETSTRESS_SOFFICE")
     if env and os.path.isfile(env):
         return env
     for name in ("soffice", "libreoffice", "soffice.exe"):
@@ -47,7 +47,7 @@ def find_soffice():
 
 def recalc(soffice, files, timeout=300):
     """Recalculate each file in one LibreOffice run. Returns {src: recalculated path or None}."""
-    work = Path(tempfile.mkdtemp(prefix="xlsx-verify-"))
+    work = Path(tempfile.mkdtemp(prefix="sheetstress-"))
     prof = work / "profile"
     (prof / "user").mkdir(parents=True)
     (prof / "user" / "registrymodifications.xcu").write_text(SETTINGS, encoding="utf-8")
