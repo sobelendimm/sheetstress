@@ -151,3 +151,11 @@ def test_skipped_changes_last_line(ex, capsys, monkeypatch):
     assert out.strip().splitlines()[-1] == "sheetstress: PASS (with skipped checks)"
     assert cli.main([str(ex / "clean.xlsx"), "--checks", "logical"]) == 0
     assert capsys.readouterr().out.strip().splitlines()[-1] == "sheetstress: PASS"
+
+
+def test_needs_array_ignores_ranges_inside_string_literals():
+    from sheetstress.logical import needs_array
+    assert not needs_array('SUMPRODUCT(IF(TEXT(A1,"h:mm")="9:30",1,0))')
+    assert not needs_array('SUMPRODUCT(IF(B1="A:B",1,0))')
+    assert needs_array('SUMPRODUCT(IF(A:A>0,1,0))')
+    assert needs_array('SUMPRODUCT(IF(A1:A9="x:y",1,0))')

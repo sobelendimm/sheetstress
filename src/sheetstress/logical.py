@@ -27,7 +27,13 @@ RANGE = re.compile(rf"(?<![A-Za-z0-9_.$])(?:{_REF}|{_COL}|{_ROW})(?![A-Za-z0-9_(
 CELL = re.compile(r'<c r="([A-Z]+[0-9]+)"[^>]*>\s*<f([^>]*)>([^<]*)</f>')
 
 
+_STRING = re.compile(r'"(?:[^"]|"")*"')
+
+
 def needs_array(f):
+    # String literals ("9:30", "A:B") are blanked first so only real references count as ranges;
+    # same length keeps the positions of ARRAY matches valid.
+    f = _STRING.sub(lambda s: '"' + " " * (len(s.group()) - 2) + '"', f)
     for m in ARRAY.finditer(f):
         depth, i = 1, m.end()
         while i < len(f) and depth:
