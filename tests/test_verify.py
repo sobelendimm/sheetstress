@@ -1,0 +1,80 @@
+import json
+
+import pytest
+
+from xlsx_verify import cli, lo
+
+needs_lo = pytest.mark.skipif(lo.find_soffice() is None, reason="LibreOffice not installed")
+pytestmark = []
+
+
+def test_logical_flags_bool_compare(ex):
+    f = cli.run(str(ex / "bad_logical.xlsx"), ["logical"])
+    msgs = " ".join(x.message for x in f)
+    assert "ISERROR" in msgs and "SUMPRODUCT" in msgs
+
+
+def test_logical_clean(ex):
+    assert cli.run(str(ex / "clean.xlsx"), ["logical"]) == []
+
+
+def test_cycle_found(ex):
+    f = [x for x in cli.run(str(ex / "bad_cycle.xlsx"), ["cycle"]) if x.severity == "error"]
+    sizes = sorted(x.message.split("among ")[1].split(" ")[0] for x in f)
+    assert sizes == ["1", "2"]  # C1 self reference + A1/B1 loop
+
+
+def test_cycle_clean(ex):
+    assert cli.run(str(ex / "clean.xlsx"), ["cycle"]) == []
+
+
+def test_exit_codes_and_json(ex, capsys):
+    assert cli.main([str(ex / "bad_cycle.xlsx"), "--checks", "cycle", "--json"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["pass"] is False
+    assert cli.main([str(ex / "clean.xlsx"), "--checks", "logical,cycle"]) == 0
+    assert cli.main([str(ex / "nope.xlsx")]) == 2
+    assert cli.main([str(ex / "clean.xlsx"), "--checks", "bogus"]) == 2
+
+
+@needs_lo
+@pytest.mark.lo
+def test_error_after_recalc(ex):
+    f = cli.run(str(ex / "bad_error.xlsx"), ["error"])
+    assert any("#DIV/0!" in x.message for x in f)
+
+
+@needs_lo
+@pytest.mark.lo
+def test_injection_fragile_vs_clean(ex):
+    modes = ["text", "blankstr"]
+    bad = [x for x in cli.run(str(ex / "fragile_input.xlsx"), modes) if x.severity == "error"]
+    assert bad and all("Calc!B1" in x.location for x in bad)
+    good = [x for x in cli.run(str(ex / "clean.xlsx"), ["text", "edge", "blankstr"]) if x.severity == "error"]
+    assert good == []
+
+
+def test_numeric_is_functions_not_flagged(tmp_path):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    wb.active["A1"] = "=ISOWEEKNUM(DATE(2026,1,5))>0"
+    wb.save(tmp_path / "w.xlsx")
+    assert cli.run(str(tmp_path / "w.xlsx"), ["logical"]) == []
+
+
+def test_sheet_name_case_insensitive_cycle(tmp_path):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    ws["A1"] = "=data!B1"
+    ws["B1"] = "=A1"
+    wb.save(tmp_path / "c.xlsx")
+    assert any(x.severity == "error" for x in cli.run(str(tmp_path / "c.xlsx"), ["cycle"]))
+
+
+def test_module_exit_code(ex):
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, "-m", "xlsx_verify", str(ex / "bad_cycle.xlsx"), "--checks", "cycle"], capture_output=True)
+    assert r.returncode == 1
