@@ -42,4 +42,4 @@ proof; confirm important templates in real Excel.
 pip install -e '.[test]' && pytest          # LibreOffice tests are marked `lo` and skipped without it
 ```
 
-MIT licensed. Sponsorship link: to be added when the repository is published.
+MIT licensed. Issues and pull requests are welcome.
