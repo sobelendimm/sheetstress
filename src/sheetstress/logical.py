@@ -20,7 +20,10 @@ LOGICAL_FUNCS = frozenset((
 COMPARE = frozenset(("=", "<>", "<", ">", "<=", ">="))
 ARITH = frozenset(("+", "-", "*", "/", "^", "&"))
 ARRAY = re.compile(r"SUMPRODUCT\((?:--)?(?:IFERROR|IF)\(")
-RANGE = re.compile(r"\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?\d+")
+_REF = r"\$?[A-Z]{1,3}\$?\d+:\$?[A-Z]{1,3}\$?\d+"  # A1:B9
+_COL = r"\$?[A-Z]{1,3}:\$?[A-Z]{1,3}"  # A:A
+_ROW = r"\$?\d+:\$?\d+"  # 1:1
+RANGE = re.compile(rf"(?<![A-Za-z0-9_.$])(?:{_REF}|{_COL}|{_ROW})(?![A-Za-z0-9_(])")
 CELL = re.compile(r'<c r="([A-Z]+[0-9]+)"[^>]*>\s*<f([^>]*)>([^<]*)</f>')
 
 

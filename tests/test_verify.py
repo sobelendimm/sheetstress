@@ -123,3 +123,31 @@ def test_logical_tokenizer_flags(tmp_path, formula):
 ])
 def test_logical_tokenizer_no_false_alarm(tmp_path, formula):
     assert _logical(tmp_path, [formula]) == [], formula
+
+
+def test_full_column_sumproduct_needs_array():
+    from sheetstress.logical import needs_array
+    assert needs_array("=SUMPRODUCT(IF(A:A>0,1,0))")
+    assert needs_array("=SUMPRODUCT(--IF($A:$A>0,1,0))")
+    assert needs_array("=SUMPRODUCT(IF(1:1>0,1,0))")
+    assert needs_array("=SUMPRODUCT(IF(Sheet1!A:A>0,1,0))")
+    assert not needs_array("=SUMPRODUCT(IF(A1>0,1,0))")
+
+
+@needs_lo
+@pytest.mark.lo
+def test_no_unlocked_cells_reports_skipped(ex, capsys):
+    f = cli.run(str(ex / "clean.xlsx"), ["text"])
+    if any("unlocked" in x.message for x in f):
+        sk = [x for x in f if x.severity == "skipped"]
+        assert sk and sk[0].message.startswith("SKIPPED: no unlocked input cells found")
+
+
+def test_skipped_changes_last_line(ex, capsys, monkeypatch):
+    monkeypatch.setattr(cli.lo, "find_soffice", lambda: None)
+    assert cli.main([str(ex / "clean.xlsx"), "--checks", "text"]) == 0
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out
+    assert out.strip().splitlines()[-1] == "sheetstress: PASS (with skipped checks)"
+    assert cli.main([str(ex / "clean.xlsx"), "--checks", "logical"]) == 0
+    assert capsys.readouterr().out.strip().splitlines()[-1] == "sheetstress: PASS"

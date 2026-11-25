@@ -136,7 +136,8 @@ def run(path, modes, soffice, max_samples=30, timeout=600):
                         if inject(path, dst, paths[sheet], ref, value, kind):
                             jobs.append((str(dst), (mode, sheet, ref, value)))
             if not cells:
-                out.append(Finding("input", "info", "-", "no unlocked input cells found; injection checks skipped "
+                out.append(Finding("input", "skipped", "-", "SKIPPED: no unlocked input cells found; "
+                                   + ",".join(inj) + " checks not run "
                                    "(protect sheets and unlock input cells to enable them)"))
         res, work1 = lo.recalc(soffice, [j[0] for j in jobs], timeout)
         try:

@@ -21,7 +21,7 @@ def run(path, checks, max_samples=30):
     if lo_modes:
         soffice = lo.find_soffice()
         if not soffice:
-            findings.append(Finding("libreoffice", "info", "-", "LibreOffice not found; skipped: " + ",".join(lo_modes)
+            findings.append(Finding("libreoffice", "skipped", "-", "SKIPPED: LibreOffice not found; not run: " + ",".join(lo_modes)
                                     + " (set SHEETSTRESS_SOFFICE to its path)"))
         else:
             findings += recalc_checks.run(path, lo_modes, soffice, max_samples)
@@ -58,13 +58,14 @@ def main(argv=None):
         print(f"cannot read workbook: {e}", file=sys.stderr)
         return 2
     errors = [f for f in findings if f.severity == "error"]
+    skipped = any(f.severity == "skipped" for f in findings)
     if a.json:
-        print(json.dumps({"file": a.file, "checks": checks, "pass": not errors,
+        print(json.dumps({"file": a.file, "checks": checks, "pass": not errors, "skipped_checks": skipped,
                           "findings": [f.as_dict() for f in findings]}, ensure_ascii=False, indent=2))
     else:
         for f in findings:
             print(f"{f.severity.upper():7} [{f.check}] {f.location}: {f.message}")
-        print("sheetstress: PASS" if not errors else f"sheetstress: FAIL ({len(errors)} error(s))")
+        print(("sheetstress: PASS (with skipped checks)" if skipped else "sheetstress: PASS") if not errors else f"sheetstress: FAIL ({len(errors)} error(s))")
     return 1 if errors else 0
 
 

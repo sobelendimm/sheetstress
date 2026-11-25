@@ -10,7 +10,10 @@ sheetstress model.xlsx [--checks logical,cycle,error,text,edge,blankstr] [--json
 ```
 
 Exit codes: `0` pass, `1` at least one error finding, `2` usage / unreadable file.
-Last line is `sheetstress: PASS` or `sheetstress: FAIL (n error(s))`.
+Last line is `sheetstress: PASS`, `sheetstress: PASS (with skipped checks)` or `sheetstress: FAIL (n error(s))`.
+`PASS (with skipped checks)` (still exit `0`; JSON `"skipped_checks": true`) means a requested check could not
+run (no LibreOffice, or no unlocked input cells for `text`/`edge`/`blankstr`); each is listed as a `SKIPPED:` finding,
+so a plain `PASS` always means every requested check actually ran.
 
 | Check | Needs LibreOffice | What it catches |
 |---|---|---|
@@ -22,9 +25,9 @@ Last line is `sheetstress: PASS` or `sheetstress: FAIL (n error(s))`.
 | `blankstr` | yes | an input cell holding `=""` produces a new visible error |
 
 Input cells are the cells with `locked = False` (the usual convention for protected templates). If a
-workbook has none, the injection checks report an info line and are skipped. LibreOffice is found on
+workbook has none, the injection checks report a `SKIPPED` finding and do not run. LibreOffice is found on
 `PATH`, in the usual per-OS locations, or via `SHEETSTRESS_SOFFICE`; without it those checks are skipped
-with an info line and never fail the run.
+with a `SKIPPED` finding and never fail the run.
 
 See [docs/checks.md](docs/checks.md) for details and [docs/design.md](docs/design.md) for the design notes.
 Synthetic sample workbooks: `python examples/make_examples.py outdir`.

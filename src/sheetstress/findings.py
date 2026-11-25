@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 @dataclass
 class Finding:
     check: str
-    severity: str  # "error" | "warning" | "info"
+    severity: str  # "error" | "warning" | "info" | "skipped"
     location: str
     message: str
 
