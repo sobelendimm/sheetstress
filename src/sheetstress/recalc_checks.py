@@ -128,17 +128,25 @@ def run(path, modes, soffice, max_samples=30, timeout=600):
         if inj:
             cells = input_cells(path, max_samples)
             n = 0
+            tried = failed = 0
             for mode in inj:
                 for sheet, ref in cells:
                     for value, kind in INJECT[mode]:
                         n += 1
+                        tried += 1
                         dst = work0 / f"inj{n}.xlsx"
                         if inject(path, dst, paths[sheet], ref, value, kind):
                             jobs.append((str(dst), (mode, sheet, ref, value)))
+                        else:
+                            failed += 1
             if not cells:
                 out.append(Finding("input", "skipped", "-", "SKIPPED: no unlocked input cells found; "
                                    + ",".join(inj) + " checks not run "
                                    "(protect sheets and unlock input cells to enable them)"))
+            elif failed:
+                out.append(Finding("input", "skipped", "-", f"SKIPPED: could not inject {failed} of {tried} test value(s) "
+                                   f"into the {len(cells)} sampled input cell(s); those " + ",".join(inj)
+                                   + " checks did not run"))
         res, work1 = lo.recalc(soffice, [j[0] for j in jobs], timeout)
         try:
             if not res[jobs[0][0]]:
@@ -148,15 +156,21 @@ def run(path, modes, soffice, max_samples=30, timeout=600):
             if "error" in modes:
                 for (s, r), e in sorted(base.items()):
                     out.append(Finding("error", "error", f"{s}!{r}", f"error value {e} after recalculation"))
+            no_out = []
             for job, meta in jobs[1:]:
                 p = res[job]
                 if not p:
-                    out.append(Finding(meta[0], "warning", f"{meta[1]}!{meta[2]}", "recalculation produced no output"))
+                    no_out.append(meta)
                     continue
                 for (s, r), e in sorted(visible_errors(p).items()):
                     if (s, r) not in base and (s, r) != (meta[1], meta[2]):
                         out.append(Finding(meta[0], "error", f"{s}!{r}",
                                            f"input {meta[1]}!{meta[2]} = {meta[3]} makes this visible formula return {e}"))
+            if no_out:                                       # one aggregated finding, not one per injected copy
+                ex = ", ".join(f"{m[1]}!{m[2]}={m[3]}" for m in no_out[:3])
+                out.append(Finding("input", "skipped", "-", f"SKIPPED: recalculation produced no output for {len(no_out)} "
+                                   f"of {len(jobs) - 1} injected cop{'y' if len(jobs) == 2 else 'ies'} (e.g. {ex}); "
+                                   "those checks did not run"))
         finally:
             shutil.rmtree(work1, ignore_errors=True)
     finally:

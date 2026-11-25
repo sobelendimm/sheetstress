@@ -134,13 +134,99 @@ def test_full_column_sumproduct_needs_array():
     assert not needs_array("=SUMPRODUCT(IF(A1>0,1,0))")
 
 
+def _fake_recalc(monkeypatch, missing=()):
+    """Replace the LibreOffice run: every file 'recalculates' to itself, except those whose stem is in `missing`."""
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from sheetstress import recalc_checks
+
+    def fake(soffice, files, timeout=300):
+        work = Path(tempfile.mkdtemp(prefix="sheetstress-fake-"))
+        res = {}
+        for f in files:
+            if Path(f).stem in missing:
+                res[f] = None
+                continue
+            dst = work / Path(f).name
+            shutil.copy(f, dst)
+            res[f] = str(dst)
+        return res, work
+    monkeypatch.setattr(recalc_checks.lo, "recalc", fake)
+    monkeypatch.setattr(cli.lo, "find_soffice", lambda: "/fake/soffice")
+
+
+def test_no_unlocked_cells_reports_skipped(ex, monkeypatch):
+    """bad_error.xlsx has no unlocked cells: the injection checks must say so (unconditional, LibreOffice stubbed)."""
+    from sheetstress import recalc_checks
+    assert recalc_checks.input_cells(str(ex / "bad_error.xlsx"), 30) == []
+    _fake_recalc(monkeypatch)
+    f = cli.run(str(ex / "bad_error.xlsx"), ["text"])
+    sk = [x for x in f if x.severity == "skipped"]
+    assert sk and sk[0].message.startswith("SKIPPED: no unlocked input cells found")
+
+
 @needs_lo
 @pytest.mark.lo
-def test_no_unlocked_cells_reports_skipped(ex, capsys):
+def test_no_unlocked_cells_reports_skipped_real_lo(ex):
+    f = cli.run(str(ex / "bad_error.xlsx"), ["text", "edge", "blankstr"])
+    sk = [x for x in f if x.severity == "skipped"]
+    assert sk and sk[0].message.startswith("SKIPPED: no unlocked input cells found")
+
+
+def test_inject_all_false_reports_skipped(ex, monkeypatch, capsys):
+    from sheetstress import recalc_checks
+    _fake_recalc(monkeypatch)
+    monkeypatch.setattr(recalc_checks, "inject", lambda *a, **k: False)
     f = cli.run(str(ex / "clean.xlsx"), ["text"])
-    if any("unlocked" in x.message for x in f):
-        sk = [x for x in f if x.severity == "skipped"]
-        assert sk and sk[0].message.startswith("SKIPPED: no unlocked input cells found")
+    sk = [x for x in f if x.severity == "skipped"]
+    assert sk and sk[0].message.startswith("SKIPPED: could not inject")
+    assert cli.main([str(ex / "clean.xlsx"), "--checks", "text"]) == 0
+    assert capsys.readouterr().out.strip().splitlines()[-1] == "sheetstress: PASS (with skipped checks)"
+
+
+def test_inject_partial_false_reports_skipped(ex, monkeypatch):
+    from sheetstress import recalc_checks
+    real = recalc_checks.inject
+    _fake_recalc(monkeypatch)
+    monkeypatch.setattr(recalc_checks, "inject", lambda src, dst, sx, ref, value, kind:
+                        False if value == "-1" else real(src, dst, sx, ref, value, kind))
+    f = cli.run(str(ex / "clean.xlsx"), ["edge"])
+    sk = [x for x in f if x.severity == "skipped"]
+    assert len(sk) == 1 and sk[0].message.startswith("SKIPPED: could not inject 1 of 4")
+
+
+def test_lo_injected_recalc_missing_reports_skipped(ex, monkeypatch):
+    """LibreOffice produced no output for an injected copy: that check did not run -> SKIPPED, not a quiet warning."""
+    from sheetstress import recalc_checks
+    assert recalc_checks.input_cells(str(ex / "clean.xlsx"), 30)   # fixture really has an unlocked cell
+    _fake_recalc(monkeypatch, missing={"inj1"})   # first injected copy is named inj1 by run()
+    f = cli.run(str(ex / "clean.xlsx"), ["text"])
+    sk = [x for x in f if x.severity == "skipped"]
+    assert len(sk) == 1 and sk[0].message.startswith("SKIPPED: recalculation produced no output for 1 of 1")
+    assert not [x for x in f if x.severity == "warning"]
+
+
+def test_lo_base_recalc_failure_is_error(ex, monkeypatch):
+    _fake_recalc(monkeypatch, missing={"base"})
+    f = cli.run(str(ex / "clean.xlsx"), ["text"])
+    assert [x for x in f if x.severity == "error" and "recalculation failed" in x.message]
+
+
+def test_fail_on_skipped(ex, capsys, monkeypatch):
+    monkeypatch.setattr(cli.lo, "find_soffice", lambda: None)
+    clean = str(ex / "clean.xlsx")
+    assert cli.main([clean, "--checks", "text"]) == 0
+    capsys.readouterr()
+    assert cli.main([clean, "--checks", "text", "--fail-on-skipped"]) == 4
+    assert capsys.readouterr().out.strip().splitlines()[-1] == "sheetstress: FAIL (skipped checks; --fail-on-skipped)"
+    assert cli.main([clean, "--checks", "text", "--fail-on-skipped", "--json"]) == 4
+    data = json.loads(capsys.readouterr().out)
+    assert data["pass"] is False and data["skipped_checks"] is True
+    assert cli.main([clean, "--checks", "logical,cycle", "--fail-on-skipped"]) == 0   # nothing skipped
+    capsys.readouterr()
+    assert cli.main([str(ex / "bad_cycle.xlsx"), "--checks", "cycle,text", "--fail-on-skipped"]) == 1   # errors win
 
 
 def test_skipped_changes_last_line(ex, capsys, monkeypatch):
